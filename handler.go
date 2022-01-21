@@ -90,6 +90,10 @@ func (handler *Handler) ServeHTTP(writer http.ResponseWriter, req *http.Request)
 
 	// Wait for only master response in a blocking way
 	response := <-masterResponseCh
+	if handler.server.onMainBackendFinishedHandler != nil {
+		response = handler.server.onMainBackendFinishedHandler(response)
+	}
+
 	if response == nil || response.Err != nil {
 		http.Error(writer, "Internal Server Error", 500)
 	} else {
