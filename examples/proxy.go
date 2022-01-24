@@ -1,7 +1,11 @@
+//go:build !example
+// +build !example
+
 package main
 
 import (
-	"../"
+	"github.com/kentaro/delta"
+
 	"log"
 	"net/http"
 	"time"

@@ -34,7 +34,7 @@ func (handler *Handler) ServeHTTP(writer http.ResponseWriter, req *http.Request)
 
 	masterResponseCh := make(chan *Response, 1)
 	responseCh := make(chan *Response, backendCount)
-	allResponsesCh := make(chan []*Response, 1)
+	allResponsesCh := make(chan []*Response)
 	done := make(chan bool, 1)
 
 	bodies := make(map[string]io.Reader)
@@ -77,16 +77,7 @@ func (handler *Handler) ServeHTTP(writer http.ResponseWriter, req *http.Request)
 			responses[backendName] = response
 
 			if requestCount >= backendCount {
-				if handler.server.onBackendFinishedHandler != nil {
-					handler.server.onBackendFinishedHandler(responses)
-				}
-
-				resp := make([]*Response, 0, len(responses))
-				for _, r := range responses {
-					resp = append(resp, r)
-				}
-
-				allResponsesCh <- resp
+				handler.onAllBackendsFinished(responses, allResponsesCh)
 
 				done <- true
 				break
@@ -124,6 +115,21 @@ func (handler *Handler) ServeHTTP(writer http.ResponseWriter, req *http.Request)
 	}
 
 	<-done
+}
+
+func (handler *Handler) onAllBackendsFinished(responses map[string]*Response, allResponsesCh chan []*Response) {
+	if handler.server.onBackendFinishedHandler != nil {
+		handler.server.onBackendFinishedHandler(responses)
+	}
+
+	if handler.server.waitForAllBackends {
+		resp := make([]*Response, 0, len(responses))
+		for _, r := range responses {
+			resp = append(resp, r)
+		}
+
+		allResponsesCh <- resp
+	}
 }
 
 func (handler *Handler) dismiss(r io.Reader) {
