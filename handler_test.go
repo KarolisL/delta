@@ -36,6 +36,7 @@ func setupServer(masterPort, shadowPort int) *Server {
 }
 
 func launchBackend(backend string) (recorder *httptest.ResponseRecorder, port int) {
+	port = freePort()
 	router := router.NewRouter()
 	recorder = httptest.NewRecorder()
 
