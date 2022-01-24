@@ -1,6 +1,7 @@
 package delta
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -24,12 +25,15 @@ func TestRequestBody_HappyFlow(t *testing.T) {
 		}
 	}
 
-	go launchBackend(":18082")
-	go launchBackend(":18083")
+	masterPort := freePort()
+	go launchBackend(fmt.Sprintf(":%v", masterPort))
+	shadowPort := freePort()
+	go launchBackend(fmt.Sprintf(":%v", shadowPort))
 
-	server := NewServer("0.0.0.0", 8484)
-	server.AddMasterBackend("production", "localhost", 18082)
-	server.AddBackend("testing", "localhost", 18083)
+	serverPort := freePort()
+	server := NewServer("0.0.0.0", serverPort)
+	server.AddMasterBackend("production", "localhost", masterPort)
+	server.AddBackend("testing", "localhost", shadowPort)
 	server.OnSelectBackend(func(req *http.Request) []string {
 		if req.Header["Delta-Test-Enabled"] != nil {
 			return []string{"production", "testing"}
@@ -94,12 +98,15 @@ func TestRequestBody_WaitForAllBackends(t *testing.T) {
 		}
 	}
 
-	go launchBackend(":18086")
-	go launchBackend(":18087")
+	masterPort := freePort()
+	go launchBackend(fmt.Sprintf(":%v", masterPort))
+	shadowPort := freePort()
+	go launchBackend(fmt.Sprintf(":%v", shadowPort))
 
-	server := NewServer("0.0.0.0", 8485)
-	server.AddMasterBackend("production", "localhost", 18086)
-	server.AddBackend("testing", "localhost", 18087)
+	serverPort := freePort()
+	server := NewServer("0.0.0.0", serverPort)
+	server.AddMasterBackend("production", "localhost", masterPort)
+	server.AddBackend("testing", "localhost", shadowPort)
 	server.OnSelectBackend(func(req *http.Request) []string {
 		if req.Header["Delta-Test-Enabled"] != nil {
 			return []string{"production", "testing"}

@@ -2,18 +2,22 @@ package delta
 
 import (
 	"fmt"
-	. "github.com/r7kamura/gospel"
-	"github.com/r7kamura/router"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	. "github.com/r7kamura/gospel"
+	"github.com/r7kamura/router"
 )
 
-func setupServer() *Server {
-	server := NewServer("0.0.0.0", 8484)
+func setupServer(masterPort, shadowPort int) *Server {
+	port := freePort()
 
-	server.AddMasterBackend("production", "0.0.0.0", 18080)
-	server.AddBackend("testing", "0.0.0.0", 18081)
+	server := NewServer("0.0.0.0", port)
+
+	server.AddMasterBackend("production", "0.0.0.0", masterPort)
+	server.AddBackend("testing", "0.0.0.0", shadowPort)
 
 	server.OnSelectBackend(func(req *http.Request) []string {
 		if req.Method == "GET" {
@@ -31,18 +35,27 @@ func setupServer() *Server {
 	return server
 }
 
-func launchBackend(backend string, addr string) *httptest.ResponseRecorder {
+func launchBackend(backend string) (recorder *httptest.ResponseRecorder, port int) {
 	router := router.NewRouter()
-	recorder := httptest.NewRecorder()
+	recorder = httptest.NewRecorder()
 
 	router.Get("/", http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(recorder, "%s", backend)
 	}))
 
-	server := &http.Server{Addr: addr, Handler: router}
+	server := &http.Server{Addr: fmt.Sprintf(":%v", port), Handler: router}
 	go server.ListenAndServe()
 
-	return recorder
+	return recorder, port
+}
+
+func freePort() int {
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		return 0
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
 }
 
 func get(handler http.Handler, path string) *httptest.ResponseRecorder {
@@ -57,9 +70,9 @@ func request(handler http.Handler, method, path string) *httptest.ResponseRecord
 }
 
 func TestHandler(t *testing.T) {
-	productionResponse := launchBackend("production", ":18080")
-	testingResponse := launchBackend("testing", ":18081")
-	server := setupServer()
+	productionResponse, productionPort := launchBackend("production")
+	testingResponse, testingPort := launchBackend("testing")
+	server := setupServer(productionPort, testingPort)
 	handler := NewHandler(server)
 
 	Describe(t, "ServeHTTP", func() {
