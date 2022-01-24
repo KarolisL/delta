@@ -14,10 +14,12 @@ type Server struct {
 	Port     int
 	Backends map[string]*Backend
 
-	onSelectBackendHandler       func(req *http.Request) []string
-	onMungeHeaderHandler         func(backend string, header *http.Header)
-	onBackendFinishedHandler     func(map[string]*Response)
-	onMainBackendFinishedHandler func(*Response) *Response
+	waitForAllBackends bool
+
+	onSelectBackendHandler   func(req *http.Request) []string
+	onMungeHeaderHandler     func(backend string, header *http.Header)
+	onBackendFinishedHandler func(map[string]*Response)
+	onResponseHandler        func(responses ...*Response) *Response
 }
 
 func NewServer(host string, port int) *Server {
@@ -38,7 +40,22 @@ func NewServer(host string, port int) *Server {
 		return backends
 	})
 
+	// by default return master backend
+	server.OnResponse(func(responses ...*Response) *Response {
+		for _, response := range responses {
+			if response.Backend != nil && response.Backend.IsMaster {
+				return response
+			}
+		}
+
+		return nil
+	})
+
 	return server
+}
+
+func (server *Server) WaitForAllBackends(shouldWait bool) {
+	server.waitForAllBackends = shouldWait
 }
 
 func (server *Server) AddMasterBackend(name, host string, port int) {
@@ -71,8 +88,8 @@ func (server *Server) OnBackendFinished(handler func(responses map[string]*Respo
 	server.onBackendFinishedHandler = handler
 }
 
-func (server *Server) OnMainBackendFinished(handler func(response *Response) *Response) {
-	server.onMainBackendFinishedHandler = handler
+func (server *Server) OnResponse(handler func(responses ...*Response) *Response) {
+	server.onResponseHandler = handler
 }
 
 func (server *Server) Run() {

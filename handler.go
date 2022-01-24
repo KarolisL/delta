@@ -34,7 +34,8 @@ func (handler *Handler) ServeHTTP(writer http.ResponseWriter, req *http.Request)
 
 	masterResponseCh := make(chan *Response, 1)
 	responseCh := make(chan *Response, backendCount)
-	done := make(chan bool)
+	allResponsesCh := make(chan []*Response, 1)
+	done := make(chan bool, 1)
 
 	bodies := make(map[string]io.Reader)
 	defer handler.dismissAll(bodies)
@@ -60,8 +61,8 @@ func (handler *Handler) ServeHTTP(writer http.ResponseWriter, req *http.Request)
 
 	// Wait for all responses asynchronously
 	go func() {
-		responses := make(map[string]*Response)
 		requestCount := 0
+		responses := make(map[string]*Response)
 
 		for {
 			response := <-responseCh
@@ -73,14 +74,19 @@ func (handler *Handler) ServeHTTP(writer http.ResponseWriter, req *http.Request)
 			handler.dismiss(body)
 
 			requestCount = requestCount + 1
-			if response.Err != nil {
-				responses[backendName] = response
-			}
+			responses[backendName] = response
 
 			if requestCount >= backendCount {
 				if handler.server.onBackendFinishedHandler != nil {
 					handler.server.onBackendFinishedHandler(responses)
 				}
+
+				resp := make([]*Response, 0, len(responses))
+				for _, r := range responses {
+					resp = append(resp, r)
+				}
+
+				allResponsesCh <- resp
 
 				done <- true
 				break
@@ -88,10 +94,17 @@ func (handler *Handler) ServeHTTP(writer http.ResponseWriter, req *http.Request)
 		}
 	}()
 
-	// Wait for only master response in a blocking way
+	// Wait for master response in a blocking way
 	response := <-masterResponseCh
-	if handler.server.onMainBackendFinishedHandler != nil {
-		response = handler.server.onMainBackendFinishedHandler(response)
+
+	if handler.server.onResponseHandler != nil {
+		if handler.server.waitForAllBackends {
+			response = handler.server.onResponseHandler(<-allResponsesCh...)
+		} else {
+			response = handler.server.onResponseHandler(response)
+		}
+	} else if handler.server.waitForAllBackends {
+		<-allResponsesCh
 	}
 
 	if response == nil || response.Err != nil {
